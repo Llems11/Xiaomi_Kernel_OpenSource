@@ -2,6 +2,10 @@ name: Build Kernel dew KernelSU-Next + SUSFS
 
 on:
   workflow_dispatch:
+    inputs:
+      init_boot_url:
+        description: 'URL directa del init_boot_patched.img (sube el archivo a gofile.io y pega el link directo)'
+        required: true
 
 jobs:
   build:
@@ -13,7 +17,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev make \
           libelf-dev gcc-aarch64-linux-gnu git curl python3 \
-          zip unzip cpio
+          zip unzip cpio lz4
 
       - name: Clone kernel source
         run: |
@@ -45,16 +49,31 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           make defconfig
-          # Habilitar KernelSU y SUSFS en el config
           echo "CONFIG_KSU=y" >> .config
           echo "CONFIG_KSU_SUSFS=y" >> .config
           make olddefconfig
           make -j$(nproc) 2>&1 | tail -80
 
-      - name: Subir resultado
+      - name: Descargar init_boot parcheado y reempaquetar
+        run: |
+          # Descargar magiskboot para Linux
+          curl -Lo magiskboot https://github.com/PinNaCode/magiskboot_build/releases/download/last-ci/magiskboot_x86_64-unknown-linux-musl
+          chmod +x magiskboot
+
+          # Descargar el init_boot parcheado por KernelSU-Next
+          curl -Lo init_boot_patched.img "${{ github.event.inputs.init_boot_url }}"
+
+          # Desempaquetar
+          ./magiskboot unpack init_boot_patched.img
+
+          # Reemplazar kernel con el nuevo compilado con SUSFS
+          cp kernel/arch/arm64/boot/Image kernel
+
+          # Reempaquetar
+          ./magiskboot repack init_boot_patched.img init_boot_SUSFS_FINAL.img
+
+      - name: Subir init_boot final
         uses: actions/upload-artifact@v4
         with:
-          name: kernel_Image_ksunext_susfs
-          path: |
-            kernel/arch/arm64/boot/Image
-            kernel/arch/arm64/boot/Image.gz
+          name: init_boot_SUSFS_FINAL
+          path: init_boot_SUSFS_FINAL.img
