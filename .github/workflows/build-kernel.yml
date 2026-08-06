@@ -64,10 +64,8 @@ jobs:
           cd kernel
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          echo "=== Defconfigs disponibles ==="
-          ls arch/arm64/configs/ | grep -i "dew\|mtk\|helio\|user"
           echo "=== Todos los defconfigs ==="
-          ls arch/arm64/configs/
+          ls arch/arm64/configs/ || true
 
       - name: Subir resultado
         uses: actions/upload-artifact@v4
