@@ -8,11 +8,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout kernel source
-        uses: actions/checkout@v4
-        with:
-          ref: dew-v-oss
-
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -20,29 +15,38 @@ jobs:
           libelf-dev gcc-aarch64-linux-gnu git curl python3 \
           zip unzip
 
+      - name: Clone kernel source
+        run: |
+          git clone --depth=1 \
+          https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git \
+          -b dew-v-oss kernel
+
       - name: Setup KernelSU-Next
         run: |
+          cd kernel
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash
 
-      - name: Apply SUSFS patches
+      - name: Clone y aplicar SUSFS
         run: |
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
-          cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
-          cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch ./
-          cp susfs4ksu/kernel_patches/fs/susfs.c fs/
-          cp susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
+          cd kernel
+          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch ./
+          cp ../susfs4ksu/kernel_patches/fs/susfs.c fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
           cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch && cd ..
           patch -p1 < 50_add_susfs_in_kernel-4.19.patch
 
-      - name: Build kernel
+      - name: Compilar kernel
         run: |
+          cd kernel
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           make dew_defconfig
           make -j$(nproc)
 
-      - name: Upload init_boot
+      - name: Subir resultado
         uses: actions/upload-artifact@v4
         with:
           name: init_boot_ksunext_susfs
-          path: arch/arm64/boot/Image
+          path: kernel/arch/arm64/boot/Image
