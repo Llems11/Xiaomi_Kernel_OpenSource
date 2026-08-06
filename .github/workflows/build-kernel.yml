@@ -2,10 +2,6 @@ name: Build Kernel dew KernelSU-Next + SUSFS
 
 on:
   workflow_dispatch:
-    inputs:
-      init_boot_url:
-        description: 'URL directa del init_boot_patched.img (sube el archivo a gofile.io y pega el link directo)'
-        required: true
 
 jobs:
   build:
@@ -54,14 +50,34 @@ jobs:
           make olddefconfig
           make -j$(nproc) 2>&1 | tail -80
 
-      - name: Descargar init_boot parcheado y reempaquetar
+      - name: Obtener magiskboot desde Magisk APK
         run: |
-          # Descargar magiskboot para Linux
-          curl -Lo magiskboot https://github.com/PinNaCode/magiskboot_build/releases/download/last-ci/magiskboot_x86_64-unknown-linux-musl
+          curl -Lo magisk.apk https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk-v30.7.apk || \
+          curl -Lo magisk.apk https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk
+          unzip -p magisk.apk lib/x86_64/libmagiskboot.so > magiskboot
           chmod +x magiskboot
+          ./magiskboot --help 2>&1 | head -5 || true
 
-          # Descargar el init_boot parcheado por KernelSU-Next
-          curl -Lo init_boot_patched.img "${{ github.event.inputs.init_boot_url }}"
+      - name: Descargar init_boot de gofile y reempaquetar
+        run: |
+          # Obtener token de gofile
+          TOKEN=$(curl -s "https://api.gofile.io/accounts" -X POST | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['token'])")
+          
+          # Obtener info del archivo
+          FILE_INFO=$(curl -s "https://api.gofile.io/contents/q5t3aW?wt=4fd6sg89d7s6&cache=true" -H "Authorization: Bearer $TOKEN")
+          echo "File info: $FILE_INFO" | head -c 500
+          
+          DOWNLOAD_URL=$(echo $FILE_INFO | python3 -c "
+          import sys,json
+          data=json.load(sys.stdin)
+          contents=data['data']['children']
+          key=list(contents.keys())[0]
+          print(contents[key]['link'])
+          ")
+          
+          echo "Descargando desde: $DOWNLOAD_URL"
+          curl -Lo init_boot_patched.img -H "Authorization: Bearer $TOKEN" "$DOWNLOAD_URL"
+          ls -lh init_boot_patched.img
 
           # Desempaquetar
           ./magiskboot unpack init_boot_patched.img
@@ -71,6 +87,7 @@ jobs:
 
           # Reempaquetar
           ./magiskboot repack init_boot_patched.img init_boot_SUSFS_FINAL.img
+          ls -lh init_boot_SUSFS_FINAL.img
 
       - name: Subir init_boot final
         uses: actions/upload-artifact@v4
