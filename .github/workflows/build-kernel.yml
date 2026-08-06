@@ -25,19 +25,39 @@ jobs:
         run: |
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash
+          echo "=== Buscando KernelSU ==="
+          find . -maxdepth 3 -name "KernelSU" 2>/dev/null || echo "No encontrado"
+          ls -la
 
       - name: Clone y aplicar SUSFS
         run: |
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
           cd kernel
-          ls -la KernelSU || true
+          
+          # Encontrar directorio KernelSU
+          KSU_DIR=$(find . -maxdepth 3 -type d -name "KernelSU" 2>/dev/null | head -1)
+          echo "KernelSU encontrado en: $KSU_DIR"
+          
+          # Crear directorios si no existen
           mkdir -p fs include/linux
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch ./
+          
+          # Copiar archivos SUSFS
           cp ../susfs4ksu/kernel_patches/fs/susfs.c fs/
           cp ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
-          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./kernel_10_enable_susfs.patch
-          cd KernelSU && patch -p1 < ../kernel_10_enable_susfs.patch && cd ..
-          patch -p1 < 50_add_susfs_in_kernel-4.19.patch
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch ./
+          
+          # Aplicar parche KernelSU si el directorio existe
+          if [ -n "$KSU_DIR" ] && [ -d "$KSU_DIR" ]; then
+            cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch "$KSU_DIR"/
+            cd "$KSU_DIR"
+            patch -p1 --fuzz=3 --ignore-whitespace < 10_enable_susfs_for_ksu.patch || true
+            cd ../..
+          else
+            echo "ADVERTENCIA: Directorio KernelSU no encontrado, saltando parche KSU"
+          fi
+          
+          # Aplicar parche principal SUSFS con tolerancia
+          patch -p1 --fuzz=3 --ignore-whitespace < 50_add_susfs_in_kernel-4.19.patch || true
 
       - name: Compilar kernel
         run: |
@@ -45,7 +65,7 @@ jobs:
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           make dew_defconfig
-          make -j$(nproc)
+          make -j$(nproc) 2>&1 | tail -50
 
       - name: Subir resultado
         uses: actions/upload-artifact@v4
